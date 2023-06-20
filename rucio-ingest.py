@@ -11,6 +11,7 @@ import time
 import random
 
 import gfal2
+import samweb_client
 from rucio.client import Client as RucioClient
 from rucio.client.uploadclient import UploadClient
 from rucio.common.exception import (DataIdentifierNotFound, RSEWriteBlocked, InputValidationError, NoFilesUploaded)
@@ -362,17 +363,12 @@ def inplace_ingest2(files, rse, dataset):
     inplace_ingest_client.ingest(items)
 
 
-def main():
-    args = get_program_arguments()
-    if args:
-        print(vars(args))
-    # here a function providing list of pfns from samweb
-    #inplace_ingest2(pfns, rse, dataset)
+def get_file_list_from_samweb(dimensions=None, defname=None):
+    cl = samweb_client.SAMWebClient(experiment='icarus')
+    files = cl.listFiles(dimensions=dimensions, defname=defname)
+    for f in range(2):
+        print(files[f])
 
-def get_program_arguments():
-    parser = get_parser()
-    args = parser.parse_args()
-    return args
 
 def get_parser():
     parser = argparse.ArgumentParser(
@@ -385,14 +381,14 @@ def get_parser():
         required=False,
         help='Run number',
         metavar='RUN_NUMBER',
-        dest='run_number')
+        dest='run_numbers')
     grp.add_argument(
         '-dim',
         nargs=1,
         required=False,
-        help='Samweb dimension',
-        metavar='SAMWEB_DIMENSION',
-        dest='dimension')
+        help='Samweb dimensions',
+        metavar='SAMWEB_DIMENSIONS',
+        dest='dimensions')
     grp.add_argument(
         '-def',
          nargs=1,
@@ -409,13 +405,13 @@ def get_parser():
         dest='dataset')
     parser.add_argument(
         '-s',
-        nargs=1,
+        nargs='+',
         required=False,
         default='BEAM',
-        choices=['ALL', 'BEAM', 'OFFBEAM', 'NUMIBEAM', 'BNBBEAM', 'NUMIOFFBEAM', 'BNBOFFBEAM', 'NUMIMAJORITY', 'BNBMAJORITY', 'NUMIMINBIAS', 'BNBMINBIAS', 'OFFBEAMNUMIMAJORITY', 'OFFBEAMBNBMAJORITY', 'OFFBEAMNUMIMINBIAS', 'OFFBEAMBNBMINBIAS'],
+        choices=['ALL', 'BEAM', 'OFFBEAM', 'NUMI', 'BNB', 'OFFBEAMNUMI', 'OFFBEAMBNB', 'NUMIMAJORITY', 'BNBMAJORITY', 'NUMIMINBIAS', 'BNBMINBIAS', 'OFFBEAMNUMIMAJORITY', 'OFFBEAMBNBMAJORITY', 'OFFBEAMNUMIMINBIAS', 'OFFBEAMBNBMINBIAS'],
         help='Data stream',
         metavar='DATA_STREAM',
-        dest='data_stream')
+        dest='data_streams')
     parser.add_argument(
         '-rse',
         nargs='+',
@@ -424,9 +420,50 @@ def get_parser():
         required=False,
         help='RSE where dataset will be replicated',
         metavar='RSE',
-        dest='rse')
+        dest='rses')
 
-    return parser.parse_args()
+    return parser
+
+
+def get_program_arguments():
+    parser = get_parser()
+    args = parser.parse_args()
+    return args
+
+
+def get_data_streams(selected_data_streams):
+    ALL = {'BEAM': ['numi', 'bnb', 'numimajority', 'bnbmajority', 'numiminbias', 'bnbminbias'], 'OFFBEAM': ['offbeamnumi', 'offbeambnb', 'offbeamnumimajority', 'offbeambnbmajority', 'offbeamnumiminbias', 'offbeambnbminbias']}
+    data_streams = []
+    for d in selected_data_streams:
+       if d == 'ALL' or d in 'BEAM':
+           data_streams += ALL['BEAM']
+       if d == 'ALL' or d in 'OFFBEAM':
+           data_streams += ALL['OFFBEAM']
+       if d != "ALL" and d != "BEAM" and d != "OFFBEAM":
+           data_streams.append(d.lower())
+    data_streams = set(data_streams)
+    return data_streams
+
+def main():
+    args = get_program_arguments()
+    definition=None
+    dimensions=None
+    if args:
+       print(vars(args))
+    if args.run_numbers:
+       dimensions = '('
+       for r in args.run_numbers:
+           dimensions += f'run_number = {r} or '
+       dimensions = dimensions[:-4] + ')'
+       dimensions += " and ("
+       for d in get_data_streams(args.data_streams):
+           dimensions += f'data_stream = {d} or '
+       dimensions = dimensions[:-4] + ')'
+       print(dimensions)
+    get_file_list_from_samweb(dimensions=dimensions, defname=None)
+    # here a function providing list of pfns from samweb
+    #inplace_ingest2(pfns, rse, dataset)
+
 
 if __name__ == '__main__':
     main()
