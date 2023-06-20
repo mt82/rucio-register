@@ -266,8 +266,7 @@ class InPlaceIngestClient(UploadClient):
         return files
 
 
-def get_files(ctxt, directory: str, rse: str, run_number: int) -> list:
-    files = ctxt.listdir(directory)
+def get_files(ctxt, files: list, rse: str, run_number: int) -> list:
 
     items = []
     for f in files:
@@ -297,52 +296,52 @@ def get_files(ctxt, directory: str, rse: str, run_number: int) -> list:
     return items
 
 
-def discover_files(ctxt, rse: str, directory: str, scope: str) -> list:
-    '''Discover files on the server to be ingested
-    '''
-    # get contents of a directory
-    files = ctxt.listdir(directory)
+#def discover_files(ctxt, rse: str, directory: str, scope: str) -> list:
+#    '''Discover files on the server to be ingested
+#    '''
+#    # get contents of a directory
+#    files = ctxt.listdir(directory)
+#
+#    items = []
+#    # build pfns
+#    for f in files:
+#        name = f
+#        pfn = f'{directory}/{f}'
+#        f_stat = ctxt.lstat(pfn)
+#        size = f_stat.st_size
+#        adler32 = ctxt.checksum(pfn, 'adler32')
+#
+#        replica = {
+#            'name': name,
+#            'scope': scope,
+#            'bytes': size,
+#            'adler32': adler32,
+#            'path': pfn,
+#            'pfn': pfn,
+#            'rse': rse,
+#            'register_after_upload': True
+#        }
+#        items.append(replica)
+#
+#    return items
 
-    items = []
-    # build pfns
-    for f in files:
-        name = f
-        pfn = f'{directory}/{f}'
-        f_stat = ctxt.lstat(pfn)
-        size = f_stat.st_size
-        adler32 = ctxt.checksum(pfn, 'adler32')
 
-        replica = {
-            'name': name,
-            'scope': scope,
-            'bytes': size,
-            'adler32': adler32,
-            'path': pfn,
-            'pfn': pfn,
-            'rse': rse,
-            'register_after_upload': True
-        }
-        items.append(replica)
-
-    return items
-
-
-def inplace_ingest(target_dir, rse):
-    ctxt = gfal2.creat_context()
-
-    rucio_client = RucioClient()
-    inplace_ingest_client = InPlaceIngestClient(rucio_client, logger=logger, ctxt=ctxt)
-
-    rse_info = rucio_client.get_rse(rse=rse)
-    rse_attributes = rucio_client.list_rse_attributes(rse)
-    print(rse_attributes)
-    print(rse_info)
-    protocol = target_dir.split(":")[0]
-    print([p['prefix'] for p in rse_info["protocols"] if p['scheme'] == protocol])
-
-    items = discover_files(ctxt, rse, target_dir, 'user.dylee')
-
-    inplace_ingest_client.upload(items)
+#def inplace_ingest(target_dir, rse):
+#    ctxt = gfal2.creat_context()
+#
+#    rucio_client = RucioClient()
+#    inplace_ingest_client = InPlaceIngestClient(rucio_client, logger=logger, ctxt=ctxt)
+#
+#    rse_info = rucio_client.get_rse(rse=rse)
+#    rse_attributes = rucio_client.list_rse_attributes(rse)
+#    print(rse_attributes)
+#    print(rse_info)
+#    protocol = target_dir.split(":")[0]
+#    print([p['prefix'] for p in rse_info["protocols"] if p['scheme'] == protocol])
+#
+#    items = discover_files(ctxt, rse, target_dir, 'user.dylee')
+#
+#    inplace_ingest_client.upload(items)
 
 
 def inplace_ingest2(target_dir, rse, run_number):
@@ -352,15 +351,15 @@ def inplace_ingest2(target_dir, rse, run_number):
     inplace_ingest_client = InPlaceIngestClient(rucio_client, logger=logger, ctxt=ctxt, target_dir=target_dir)
 
     rse_info = rucio_client.get_rse(rse=rse)
-    rse_attributes = rucio_client.list_rse_attributes(rse)
+    #rse_attributes = rucio_client.list_rse_attributes(rse)
 
     # Checks to see if RSE is deterministic
     if rse_info['deterministic']:
         raise Exception("Needs to be a non-deterministic RSE")
 
-    protocol = target_dir.split(":")[0]
-    
-    items = get_files(ctxt, target_dir, rse, run_number)
+    #protocol = target_dir.split(":")[0]
+    files = ctxt.listdir(target_dir) 
+    item = get_files(ctxt, files, rse, run_number)
     inplace_ingest_client.ingest(items)
 
 
