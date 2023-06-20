@@ -266,12 +266,11 @@ class InPlaceIngestClient(UploadClient):
         return files
 
 
-def get_files(ctxt, files: list, rse: str, run_number: int) -> list:
+def get_files(ctxt, pfns: list, rse: str, dataset: str) -> list:
 
     items = []
-    for f in files:
-        name = f
-        pfn = f'{directory}/{f}'
+    for pfn in pfns:
+        name = os.path.basename(pfn)
         f_stat = ctxt.lstat(pfn)
         size = f_stat.st_size
         adler32 = ctxt.checksum(pfn, 'adler32')
@@ -288,7 +287,7 @@ def get_files(ctxt, files: list, rse: str, run_number: int) -> list:
             'pfn': pfn,
             'rse': rse,
             'dataset_scope': 'user.icaruspro',
-            'dataset_name': f"run-{run_number}-raw",
+            'dataset_name': dataset,
             'register_after_upload': True
         }
         items.append(replica)
@@ -344,7 +343,7 @@ def get_files(ctxt, files: list, rse: str, run_number: int) -> list:
 #    inplace_ingest_client.upload(items)
 
 
-def inplace_ingest2(target_dir, rse, run_number):
+def inplace_ingest2(files, rse, dataset):
     ctxt = gfal2.creat_context()
 
     rucio_client = RucioClient()
@@ -358,38 +357,76 @@ def inplace_ingest2(target_dir, rse, run_number):
         raise Exception("Needs to be a non-deterministic RSE")
 
     #protocol = target_dir.split(":")[0]
-    files = ctxt.listdir(target_dir) 
-    item = get_files(ctxt, files, rse, run_number)
+    #files = ctxt.listdir(target_dir) 
+    item = get_files(ctxt, files, rse, dataset)
     inplace_ingest_client.ingest(items)
 
 
 def main():
     args = get_program_arguments()
-    target_dir = args.file_directory.rstrip('/')
-    rse = args.rse
-    try:
-        run_number=int(''.join(target_dir.split('/')[-4:]).lstrip('0'))
-    except Exception as e:
-        logger.error(f'could not get run number for target directory')
-        return
-    inplace_ingest2(target_dir, rse, run_number)
-
+    if args:
+        print(vars(args))
+    # here a function providing list of pfns from samweb
+    #inplace_ingest2(pfns, rse, dataset)
 
 def get_program_arguments():
-    parser = argparse.ArgumentParser(
-        description='''Rucio Ingest: scans for existing files
-        using gfal2 and register into a non-deterministic RSE without copying''')
-    parser.add_argument(
-        'file_directory',
-        help='Full URI of the target directory i.e. root://<server>:<port>/<path>\nN.B. run number will be extracted from <path>')
-    parser.add_argument(
-        'rse',
-        help='Rucio Storage Element that the files will be ingested to.'
-    )
-
+    parser = get_parser()
     args = parser.parse_args()
     return args
 
+def get_parser():
+    parser = argparse.ArgumentParser(
+        description='''Rucio Ingest: scans for existing files
+        using gfal2 and register into a non-deterministic RSE without copying''')
+    grp = parser.add_mutually_exclusive_group(required=True)
+    grp.add_argument(
+        '-r',
+        nargs='+',
+        required=False,
+        help='Run number',
+        metavar='RUN_NUMBER',
+        dest='run_number')
+    grp.add_argument(
+        '-dim',
+        nargs=1,
+        required=False,
+        help='Samweb dimension',
+        metavar='SAMWEB_DIMENSION',
+        dest='dimension')
+    grp.add_argument(
+        '-def',
+         nargs=1,
+         required=False,
+         help='Samweb definition',
+         metavar='SAMWEB_DEFINITION',
+         dest='definition')
+    parser.add_argument(
+        '-ds',
+        nargs=1,
+        required=True,
+        help='Dataset name in which files will be grouped',
+        metavar='DATASET',
+        dest='dataset')
+    parser.add_argument(
+        '-s',
+        nargs=1,
+        required=False,
+        default='BEAM',
+        choices=['ALL', 'BEAM', 'OFFBEAM', 'NUMIBEAM', 'BNBBEAM', 'NUMIOFFBEAM', 'BNBOFFBEAM', 'NUMIMAJORITY', 'BNBMAJORITY', 'NUMIMINBIAS', 'BNBMINBIAS', 'OFFBEAMNUMIMAJORITY', 'OFFBEAMBNBMAJORITY', 'OFFBEAMNUMIMINBIAS', 'OFFBEAMBNBMINBIAS'],
+        help='Data stream',
+        metavar='DATA_STREAM',
+        dest='data_stream')
+    parser.add_argument(
+        '-rse',
+        nargs='+',
+        default='INFN_CNAF_DISK_TEST',
+        choices=['INFN_CNAF_DISK_TEST', 'INFN_CNAF_TAPE', 'FNAL_DCACHE', 'FNAL_ENSTORE'],
+        required=False,
+        help='RSE where dataset will be replicated',
+        metavar='RSE',
+        dest='rse')
+
+    return parser.parse_args()
 
 if __name__ == '__main__':
     main()
