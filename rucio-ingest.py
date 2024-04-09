@@ -2,7 +2,7 @@
 
 # Ingests files for rucio non-deterministic rse
 
-
+import os
 import argparse
 import copy
 import json
@@ -14,6 +14,8 @@ import gfal2
 import samweb_client
 from rucio.client import Client as RucioClient
 from rucio.client.uploadclient import UploadClient
+from rucio.client.didclient import DIDClient
+from rucio.client.ruleclient import RuleClient
 from rucio.common.exception import (DataIdentifierNotFound, RSEWriteBlocked, InputValidationError, NoFilesUploaded)
 from rucio.rse import rsemanager as rsemgr
 
@@ -267,7 +269,7 @@ class InPlaceIngestClient(UploadClient):
         return files
 
 
-def get_files(ctxt, pfns: list, rse: str, dataset: str) -> list:
+def get_files(ctxt, pfns: list, rse: str, scope: str, dataset: str) -> list:
 
     items = []
     for pfn in pfns:
@@ -287,7 +289,7 @@ def get_files(ctxt, pfns: list, rse: str, dataset: str) -> list:
             'path': pfn,
             'pfn': pfn,
             'rse': rse,
-            'dataset_scope': 'user.icaruspro',
+            'dataset_scope': scope,
             'dataset_name': dataset,
             'register_after_upload': True
         }
@@ -344,30 +346,35 @@ def get_files(ctxt, pfns: list, rse: str, dataset: str) -> list:
 #    inplace_ingest_client.upload(items)
 
 
-def inplace_ingest2(files, rse, dataset):
+def inplace_ingest2(files, rse, scope, dataset):
     ctxt = gfal2.creat_context()
 
     rucio_client = RucioClient()
-    inplace_ingest_client = InPlaceIngestClient(rucio_client, logger=logger, ctxt=ctxt, target_dir=target_dir)
+    inplace_ingest_client = InPlaceIngestClient(rucio_client, logger=logger, ctxt=ctxt)
 
-    rse_info = rucio_client.get_rse(rse=rse)
+    #rse_info = rucio_client.get_rse(rse=rse)
     #rse_attributes = rucio_client.list_rse_attributes(rse)
 
     # Checks to see if RSE is deterministic
-    if rse_info['deterministic']:
-        raise Exception("Needs to be a non-deterministic RSE")
+    #if rse_info['deterministic']:
+    #    raise Exception("Needs to be a non-deterministic RSE")
 
     #protocol = target_dir.split(":")[0]
     #files = ctxt.listdir(target_dir) 
-    item = get_files(ctxt, files, rse, dataset)
+    items = get_files(ctxt, files, rse, scope, dataset)
     inplace_ingest_client.ingest(items)
 
 
 def get_file_list_from_samweb(dimensions=None, defname=None):
+    rse = 'FNAL_ENSTORE'
     cl = samweb_client.SAMWebClient(experiment='icarus')
-    files = cl.listFiles(dimensions=dimensions, defname=defname)
-    for f in range(2):
-        print(files[f])
+    files_name = [f for f in cl.listFiles(dimensions=dimensions, defname=defname)]
+    files_uri = []
+    for f in files_name:
+        uri = cl.getFileAccessUrls(f, schema='srm', locationfilter='enstore')
+        if len(uri) > 0:
+            files_uri.append(uri[0].replace('fndca1.fnal.gov','fndcadoor.fnal.gov'))
+    return files_uri, rse
 
 
 def get_parser():
@@ -431,38 +438,67 @@ def get_program_arguments():
     return args
 
 
-def get_data_streams(selected_data_streams):
+def get_data_streams(streams):
     ALL = {'BEAM': ['numi', 'bnb', 'numimajority', 'bnbmajority', 'numiminbias', 'bnbminbias'], 'OFFBEAM': ['offbeamnumi', 'offbeambnb', 'offbeamnumimajority', 'offbeambnbmajority', 'offbeamnumiminbias', 'offbeambnbminbias']}
     data_streams = []
-    for d in selected_data_streams:
-       if d == 'ALL' or d in 'BEAM':
+    for d in streams:
+       if d == 'ALL' or d == 'BEAM':
            data_streams += ALL['BEAM']
-       if d == 'ALL' or d in 'OFFBEAM':
+       if d == 'ALL' or d == 'OFFBEAM':
            data_streams += ALL['OFFBEAM']
        if d != "ALL" and d != "BEAM" and d != "OFFBEAM":
            data_streams.append(d.lower())
-    data_streams = set(data_streams)
-    return data_streams
+    return set(data_streams)
+
+
+def get_dimensions(runs, streams):
+    dimensions = '('
+    for r in runs:
+       dimensions += f'run_number = {r} or '
+    dimensions = dimensions[:-4] + ')'
+    dimensions += " and ("
+    for d in get_data_streams(streams):
+       dimensions += f'data_stream = {d} or '
+    dimensions = dimensions[:-4] + ')'
+    dimensions += " and (data_tier = raw)"
+    return dimensions
+
 
 def main():
     args = get_program_arguments()
-    definition=None
-    dimensions=None
-    if args:
-       print(vars(args))
+    dataset = args.dataset[0]
+    scope = 'user.icaruspro'
+    rses_dest = args.rses
+    definition = None
+    dimensions = None
+    if args.definition:
+       definition = args.definition[0]
+    if args.dimensions:
+       dimensions = args.dimensions[0]
     if args.run_numbers:
-       dimensions = '('
-       for r in args.run_numbers:
-           dimensions += f'run_number = {r} or '
-       dimensions = dimensions[:-4] + ')'
-       dimensions += " and ("
-       for d in get_data_streams(args.data_streams):
-           dimensions += f'data_stream = {d} or '
-       dimensions = dimensions[:-4] + ')'
-       print(dimensions)
-    get_file_list_from_samweb(dimensions=dimensions, defname=None)
+       dimensions=get_dimensions(args.run_numbers, args.data_streams)
+    print(f"definition={definition}")
+    print(f"dimensions={dimensions}")
+    files_uri, rse_orig = get_file_list_from_samweb(dimensions=dimensions, defname=definition)
+    
+    try:
+        dc = DIDClient()
+        dc.add_dataset(scope, dataset)
+    except:
+        pass
+    
+    if rses_dest:
+        for rse in rses_dest:
+            try:
+                rc = RuleClient()
+                rc.add_replication_rule([{"scope":scope, "name": dataset}], 1, rse)
+            except:
+                pass
+
+    for f in files_uri:
+        print(f)
     # here a function providing list of pfns from samweb
-    #inplace_ingest2(pfns, rse, dataset)
+    inplace_ingest2(files_uri, rse_orig, scope, dataset)
 
 
 if __name__ == '__main__':
