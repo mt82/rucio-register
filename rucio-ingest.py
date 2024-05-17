@@ -484,6 +484,7 @@ def main():
     try:
         dc = DIDClient()
         dc.add_dataset(scope, dataset)
+        print(f"[INFO]: dataset {scope}:{dataset} added!!")
     except:
         pass
     
@@ -492,11 +493,12 @@ def main():
             try:
                 rc = RuleClient()
                 rc.add_replication_rule([{"scope":scope, "name": dataset}], 1, rse)
+                print(f"[INFO]: rule for dataset {scope}:{dataset} to rse {rse} added!!")
             except:
                 pass
 
-    for f in files_uri:
-        print(f)
+    # for f in files_uri:
+    #     print(f)
     # here a function providing list of pfns from samweb
     inplace_ingest2(files_uri, rse_orig, scope, dataset)
 
