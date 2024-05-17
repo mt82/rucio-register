@@ -372,7 +372,7 @@ def get_file_list_from_samweb(dimensions=None, defname=None):
     cl = samweb_client.SAMWebClient(experiment='icarus')
     files_name = [f for f in cl.listFiles(dimensions=dimensions, defname=defname)]
     files_uri = []
-    for f in files_name[42:44]:
+    for f in files_name:
         uri = cl.getFileAccessUrls(f, schema='srm', locationfilter='enstore')
         if len(uri) > 0:
             files_uri.append(uri[0].replace('fndca1.fnal.gov','fndcadoor.fnal.gov'))
