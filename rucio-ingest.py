@@ -20,7 +20,7 @@ from rucio.common.exception import (DataIdentifierNotFound, RSEWriteBlocked, Inp
 from rucio.rse import rsemanager as rsemgr
 
 logging.basicConfig(format='%(asctime)-15s %(name)s %(levelname)s %(message)s', level=logging.INFO)
-logger = logging.getLogger('ndrseipi')
+logger = logging.getLogger('rucio-ingest')
 
 
 class InPlaceIngestClient(UploadClient):
@@ -48,7 +48,7 @@ class InPlaceIngestClient(UploadClient):
         logger = self.logger
         files = self._collect_and_validate_file_info(items)
         # self._register_file()
-        print(files)
+        #print(files)
 
         registered_dataset_dids = set()
         registered_file_dids = set()
@@ -140,9 +140,10 @@ class InPlaceIngestClient(UploadClient):
                         self.client.get_did(file['did_scope'], file['did_name'])
                         logger(logging.INFO, 'File already registered. Skipping upload.')
                         trace['stateReason'] = 'File already exists'
+                        num_already_exists += 1
                         continue
                     except DataIdentifierNotFound:
-                        logger(logging.INFO, 'File already exists on RSE. Previous left overs will be overwritten.')
+                        logger(logging.INFO, 'Data identifier not found')
                         delete_existing = True
             elif not is_deterministic and not no_register:
                 if rsemgr.exists(rse_settings, pfn, domain=domain, scheme=force_scheme, impl=impl, auth_token=self.auth_token, vo=self.client.vo, logger=logger):
@@ -180,6 +181,7 @@ class InPlaceIngestClient(UploadClient):
                     logger(logging.WARNING, 'Failed to attach file to the dataset')
                     logger(logging.DEBUG, 'Attaching to dataset {}'.format(str(error)))
         
+        logger(logging.INFO, f"{num_succeeded} out of {len(files)} successfully registered. {num_already_exists} already exist")
         if num_succeeded == 0:
             if num_already_exists > 0:
                 logger(logging.INFO, f'{num_already_exists} files skipped since the files already exists on RSE')
@@ -370,7 +372,7 @@ def get_file_list_from_samweb(dimensions=None, defname=None):
     cl = samweb_client.SAMWebClient(experiment='icarus')
     files_name = [f for f in cl.listFiles(dimensions=dimensions, defname=defname)]
     files_uri = []
-    for f in files_name:
+    for f in files_name[42:44]:
         uri = cl.getFileAccessUrls(f, schema='srm', locationfilter='enstore')
         if len(uri) > 0:
             files_uri.append(uri[0].replace('fndca1.fnal.gov','fndcadoor.fnal.gov'))
@@ -477,15 +479,20 @@ def main():
        dimensions = args.dimensions[0]
     if args.run_numbers:
        dimensions=get_dimensions(args.run_numbers, args.data_streams)
-    print(f"definition={definition}")
-    print(f"dimensions={dimensions}")
+
+    # log the definition and/or dimensions
+    logger.info(f"definition = {definition}")
+    logger.info(f"dimensions = {dimensions}")
+
+    # get list of files from samweb
     files_uri, rse_orig = get_file_list_from_samweb(dimensions=dimensions, defname=definition)
     
     try:
         dc = DIDClient()
         dc.add_dataset(scope, dataset)
-        print(f"[INFO]: dataset {scope}:{dataset} added!!")
+        logger.info(f"dataset {scope}:{dataset} added")
     except:
+        logger.info(f"dataset {scope}:{dataset} already exists")
         pass
     
     if rses_dest:
@@ -493,14 +500,16 @@ def main():
             try:
                 rc = RuleClient()
                 rc.add_replication_rule([{"scope":scope, "name": dataset}], 1, rse)
-                print(f"[INFO]: rule for dataset {scope}:{dataset} to rse {rse} added!!")
+                logger.info(f"rule for dataset {scope}:{dataset} to rse {rse} added")
             except:
+                logger.info(f"rule for dataset {scope}:{dataset} to rse {rse} already exists")
                 pass
 
     # for f in files_uri:
     #     print(f)
     # here a function providing list of pfns from samweb
     inplace_ingest2(files_uri, rse_orig, scope, dataset)
+    logger.info("Finished")
 
 
 if __name__ == '__main__':
